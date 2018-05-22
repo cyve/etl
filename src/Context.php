@@ -2,7 +2,9 @@
 
 namespace Cyve\ETL;
 
-class Context implements ContextInterface
+use ArrayAccess;
+
+class Context implements ArrayAccess, ContextInterface
 {
     /**
      * @var array
@@ -77,5 +79,42 @@ class Context implements ContextInterface
     public function getErrors(): array
     {
         return $this->errors;
+    }
+
+    /**
+     * @param string $offset
+     * @param mixed $value
+     */
+    public function offsetSet($offset, $value)
+    {
+        if(!$offset) return;
+
+        $this->data[$offset] = $value;
+    }
+
+    /**
+     * @param string $offset
+     * @return bool
+     */
+    public function offsetExists($offset)
+    {
+        return isset($this->data[$offset]);
+    }
+
+    /**
+     * @param string $offset
+     */
+    public function offsetUnset($offset)
+    {
+        unset($this->data[$offset]);
+    }
+
+    /**
+     * @param string $offset
+     * @return mixed
+     */
+    public function offsetGet($offset)
+    {
+        return $this->data[$offset] ?? null;
     }
 }
