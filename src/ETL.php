@@ -87,4 +87,12 @@ class ETL
 
         $this->loader->flush($this->context);
     }
+
+    /**
+     * @return array
+     */
+    public function getErrors()
+    {
+        return $this->context->getErrors();
+    }
 }
