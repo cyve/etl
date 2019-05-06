@@ -24,6 +24,11 @@ class ETL
      */
     protected $context;
 
+    public function __construct()
+    {
+        $this->context = new Context();
+    }
+
     /**
      * @param ExtractorInterface $extractor
      * @return ETL
@@ -58,14 +63,22 @@ class ETL
     }
 
     /**
-     * @param ContextInterface $context
+     * @param ContextInterface|array $context
      * @return ETL
      */
-    public function setContext(ContextInterface $context): ETL
+    public function setContext($context): ETL
     {
-        $this->context = $context;
+        $this->context = $context instanceof ContextInterface ? $context : new Context($context);
 
         return $this;
+    }
+
+    /**
+     * @return ContextInterface
+     */
+    public function getContext(): ContextInterface
+    {
+        return $this->context;
     }
 
     /**
@@ -93,6 +106,8 @@ class ETL
      */
     public function getErrors()
     {
+        @trigger_error(sprintf('The "%s()" method is deprecated since version 1.3. Use `$etl->getContext()->getErrors()` instead.', __METHOD__), E_USER_DEPRECATED);
+
         return $this->context->getErrors();
     }
 }

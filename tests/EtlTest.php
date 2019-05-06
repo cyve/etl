@@ -23,13 +23,32 @@ class EltTest extends TestCase
         $loader->expects($this->exactly(2))->method('load');
         $loader->expects($this->once())->method('flush');
         
-        $context = $this->createMock(Context::class);
-        
         $etl = new ETL();
+        $this->assertInstanceOf(Context::class, $etl->getContext());
         $this->assertInstanceOf(ETL::class, $etl->setExtractor($extractor));
         $this->assertInstanceOf(ETL::class, $etl->setTransformer($transformer));
         $this->assertInstanceOf(ETL::class, $etl->setLoader($loader));
-        $this->assertInstanceOf(ETL::class, $etl->setContext($context));
         $etl->process();
+    }
+
+    public function testSetContext()
+    {
+        $etl = new ETL();
+
+        $this->assertInstanceOf(ETL::class, $etl->setContext(new Context()));
+        $this->assertInstanceOf(Context::class, $etl->getContext());
+
+        $this->assertInstanceOf(ETL::class, $etl->setContext([]));
+        $this->assertInstanceOf(Context::class, $etl->getContext());
+    }
+
+    /**
+     * @deprecated
+     */
+    public function testGetError()
+    {
+        $etl = new ETL();
+
+        $this->assertIsArray($etl->getErrors());
     }
 }
