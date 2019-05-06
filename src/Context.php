@@ -17,11 +17,18 @@ class Context implements ArrayAccess, ContextInterface
     private $errors = [];
 
     /**
-     * @param mixed $data
+     * @param array|object $data
+     * @throws \InvalidArgumentException if data is not an array or an object
      */
     public function __construct($data = [])
     {
-        $this->data = (array) $data;
+        if (is_array($data)) {
+            $this->data = $data;
+        } elseif (is_object($data)) {
+            $this->data = get_object_vars($data);
+        } else {
+            throw new \InvalidArgumentException(sprintf('%s expects parameter 1 to be array or object, %s given', __METHOD__, gettype($data)));
+        }
     }
 
     /**
