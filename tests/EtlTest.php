@@ -2,53 +2,111 @@
 
 namespace Cyve\ETL\Test;
 
-use Cyve\ETL\Context;
 use Cyve\ETL\ETL;
-use Cyve\ETL\ExtractorInterface;
-use Cyve\ETL\LoaderInterface;
-use Cyve\ETL\TransformerInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\EventDispatcher\GenericEvent;
 
 class EltTest extends TestCase
 {
-    public function testElt()
+    public function testEltWithCallables()
     {
-        $extractor = $this->createMock(ExtractorInterface::class);
-        $extractor->expects($this->once())->method('extract')->willReturn([1, 2]);
-        
-        $transformer = $this->createMock(TransformerInterface::class);
-        $transformer->expects($this->exactly(2))->method('transform');
-        
-        $loader = $this->createMock(LoaderInterface::class);
-        $loader->expects($this->exactly(2))->method('load');
-        $loader->expects($this->once())->method('flush');
-        
-        $etl = new ETL();
-        $this->assertInstanceOf(Context::class, $etl->getContext());
-        $this->assertInstanceOf(ETL::class, $etl->setExtractor($extractor));
-        $this->assertInstanceOf(ETL::class, $etl->setTransformer($transformer));
-        $this->assertInstanceOf(ETL::class, $etl->setLoader($loader));
-        $etl->process();
+        $extractor = function ($context) {
+            return [['foo' => 'bar']];
+        };
+        $transformer = function ($data, $context) {
+            $data['fromContext'] = $context['fromContext'];
+            return (object) $data;
+        };
+        $loader = function ($data, $context) {
+            $data->loaded = true;
+            return $data;
+        };
+        $etl = new ETL($extractor, $transformer, $loader);
+        $result = $etl->process(['fromContext' => 42]);
+
+        $this->assertInstanceOf(\Generator::class, $result);
+        $results = iterator_to_array($result);
+        $this->assertCount(1, $results);
+        $this->assertContainsOnly('object', $results);
+        $this->assertEquals('bar', $results[0]->foo);
+        $this->assertEquals(42, $results[0]->fromContext);
+        $this->assertTrue($results[0]->loaded);
     }
 
-    public function testSetContext()
+    public function testEltWithInvokables()
     {
+        $extractor = new class {
+            public function __invoke($context) {
+                return [['foo' => 'bar']];
+            }
+        };
+        $transformer = new class {
+            public function __invoke($data, $context) {
+                $data['fromContext'] = $context['fromContext'];
+                return (object) $data;
+            }
+        };
+        $loader = new class {
+            public function __invoke($data, $context) {
+                $data->loaded = true;
+                return $data;
+            }
+        };
+
         $etl = new ETL();
+        $etl->setExtractor($extractor);
+        $etl->setTransformer($transformer);
+        $etl->setLoader($loader);
 
-        $this->assertInstanceOf(ETL::class, $etl->setContext(new Context()));
-        $this->assertInstanceOf(Context::class, $etl->getContext());
+        $result = $etl->process(['fromContext' => 42]);
 
-        $this->assertInstanceOf(ETL::class, $etl->setContext([]));
-        $this->assertInstanceOf(Context::class, $etl->getContext());
+        $this->assertInstanceOf(\Generator::class, $result);
+        $results = iterator_to_array($result);
+        $this->assertCount(1, $results);
+        $this->assertContainsOnly('object', $results);
+        $this->assertEquals('bar', $results[0]->foo);
+        $this->assertTrue($results[0]->loaded);
     }
 
-    /**
-     * @deprecated
-     */
-    public function testGetError()
+    public function testEventDispatcher()
     {
-        $etl = new ETL();
+        $extractor = function () {
+            return [1, 2, 3, 4];
+        };
+        $transformer = function ($data) {
+            if ($data === 2) throw new \RuntimeException('transformation error');
+            return $data;
+        };
+        $loader = function ($data) {
+            if ($data === 3) throw new \LogicException('loading error');
+            return $data;
+        };
+        $dispatcher = $this->createMock(EventDispatcherInterface::class);
+        $dispatcher->method('addListener')->withConsecutive(
+            ['progress', function() {}],
+            ['error', function() {}]
+        );
+        $dispatcher->method('dispatch')->withConsecutive(
+            [new GenericEvent(1, ['fromContext' => 42]), 'progress'],
+            [$this->callback(function ($event) {
+                return $event->getSubject() instanceof \RuntimeException;
+            }), 'error'],
+            [$this->callback(function ($event) {
+                return $event->getSubject() instanceof \LogicException;
+            }), 'error'],
+            [new GenericEvent(4, ['fromContext' => 42]), 'progress'],
+        );
 
-        $this->assertIsArray($etl->getErrors());
+        $etl = new ETL($extractor, $transformer, $loader);
+        $etl->setDispatcher($dispatcher);
+        $etl->addProgressListener(function() {});
+        $etl->addErrorListener(function() {});
+
+        $result = $etl->process(['fromContext' => 42]);
+
+        $this->assertInstanceOf(\Generator::class, $result);
+        $results = iterator_to_array($result);
+        $this->assertEquals([1, 4], $results);
     }
 }

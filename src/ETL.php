@@ -2,38 +2,55 @@
 
 namespace Cyve\ETL;
 
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\EventDispatcher\GenericEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+
 class ETL
 {
     /**
-     * @var ExtractorInterface
+     * @var callable
      */
     protected $extractor;
 
     /**
-     * @var TransformerInterface
+     * @var callable
      */
     protected $transformer;
 
     /**
-     * @var LoaderInterface
+     * @var callable
      */
     protected $loader;
 
     /**
-     * @var ContextInterface
+     * @var array
      */
-    protected $context;
+    protected $context = [];
 
-    public function __construct()
+    /**
+     * @var EventDispatcherInterface
+     */
+    protected $dispatcher;
+
+    /**
+     * @param callable|null $extractor
+     * @param callable|null $transformer
+     * @param callable|null $loader
+     */
+    public function __construct(callable $extractor = null, callable $transformer = null, callable $loader = null)
     {
-        $this->context = new Context();
+        $this->extractor = $extractor;
+        $this->transformer = $transformer;
+        $this->loader = $loader;
+        $this->dispatcher = new EventDispatcher();
     }
 
     /**
-     * @param ExtractorInterface $extractor
-     * @return ETL
+     * @param callable $extractor
+     * @return $this
      */
-    public function setExtractor(ExtractorInterface $extractor): ETL
+    public function setExtractor(callable $extractor): self
     {
         $this->extractor = $extractor;
 
@@ -41,10 +58,10 @@ class ETL
     }
 
     /**
-     * @param TransformerInterface $transformer
-     * @return ETL
+     * @param callable $transformer
+     * @return $this
      */
-    public function setTransformer(TransformerInterface $transformer): ETL
+    public function setTransformer(callable $transformer): self
     {
         $this->transformer = $transformer;
 
@@ -52,10 +69,10 @@ class ETL
     }
 
     /**
-     * @param LoaderInterface $loader
-     * @return ETL
+     * @param callable $loader
+     * @return $this
      */
-    public function setLoader(LoaderInterface $loader): ETL
+    public function setLoader(callable $loader): self
     {
         $this->loader = $loader;
 
@@ -63,51 +80,103 @@ class ETL
     }
 
     /**
-     * @param ContextInterface|array $context
-     * @return ETL
+     * @param EventDispatcherInterface $dispatcher
+     * @return $this
      */
-    public function setContext($context): ETL
+    public function setDispatcher(EventDispatcherInterface $dispatcher): self
     {
-        $this->context = $context instanceof ContextInterface ? $context : new Context($context);
+        $this->dispatcher = $dispatcher;
 
         return $this;
     }
 
     /**
-     * @return ContextInterface
+     * @param callable $callback
      */
-    public function getContext(): ContextInterface
+    public function addProgressListener(callable $callback): void
     {
-        return $this->context;
+        $this->dispatcher->addListener('progress', $callback);
     }
 
     /**
-     * Process ETL
+     * @param callable $callback
      */
-    public function process()
+    public function addErrorListener(callable $callback): void
     {
-        foreach($this->extractor->extract($this->context) as $data) {
-            try {
-                $this->loader->load(
-                    $this->transformer->transform($data, $this->context),
-                    $this->context
-                );
-            }
-            catch(\Exception $e){
-                $this->context->addError($e);
-            }
-        }
-
-        $this->loader->flush($this->context);
+        $this->dispatcher->addListener('error', $callback);
     }
 
     /**
      * @return array
      */
-    public function getErrors()
+    public function getContext(): array
     {
-        @trigger_error(sprintf('The "%s()" method is deprecated since version 1.3. Use `$etl->getContext()->getErrors()` instead.', __METHOD__), E_USER_DEPRECATED);
+        return $this->context;
+    }
 
-        return $this->context->getErrors();
+    /**
+     * @param array $context
+     * @return iterable
+     */
+    public function process(array $context = []): iterable
+    {
+        $this->context = $context;
+
+        foreach($this->extract($this->context) as $data) {
+            try {
+                $result = $this->load(
+                    $this->transform($data, $this->context),
+                    $this->context
+                );
+
+                $this->dispatcher->dispatch(new GenericEvent($data, $context), 'progress');
+
+                yield $result;
+            }
+            catch(\Exception $e){
+                $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
+            }
+        }
+    }
+
+    /**
+     * @param array $context
+     * @return iterable
+     */
+    private function extract(array $context = []): iterable
+    {
+        if (is_callable($this->extractor)) {
+            return call_user_func($this->extractor, $context);
+        }
+
+        return [];
+    }
+
+    /**
+     * @param mixed $data
+     * @param array $context
+     * @return mixed
+     */
+    private function transform($data, array $context = [])
+    {
+        if (is_callable($this->transformer)) {
+            return call_user_func($this->transformer, $data, $context);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param mixed $data
+     * @param array $context
+     * @return mixed
+     */
+    private function load($data, array $context = [])
+    {
+        if (is_callable($this->loader)) {
+            return call_user_func($this->loader, $data, $context);
+        }
+
+        return $data;
     }
 }
