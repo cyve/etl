@@ -116,9 +116,8 @@ class ETL
 
     /**
      * @param array $context
-     * @return iterable
      */
-    public function process(array $context = []): iterable
+    public function process(array $context = []): void
     {
         $this->context = $context;
 
@@ -129,9 +128,7 @@ class ETL
                     $this->context
                 );
 
-                $this->dispatcher->dispatch(new GenericEvent($data, $context), 'progress');
-
-                yield $result;
+                $this->dispatcher->dispatch(new GenericEvent($result, $context), 'progress');
             }
             catch(\Exception $e){
                 $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
