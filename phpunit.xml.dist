@@ -3,7 +3,7 @@
 <phpunit colors="true" bootstrap="vendor/autoload.php" cacheResult="false">
     <testsuites>
         <testsuite name="Cyve ETL test suite">
-            <directory>Tests</directory>
+            <directory>tests</directory>
         </testsuite>
     </testsuites>
 </phpunit>
