@@ -121,18 +121,23 @@ class ETL
     {
         $this->context = $context;
 
-        foreach($this->extract($this->context) as $data) {
-            try {
-                $result = $this->load(
-                    $this->transform($data, $this->context),
-                    $this->context
-                );
+        try {
+            foreach($this->extract($this->context) as $data) {
+                try {
+                    $result = $this->load(
+                        $this->transform($data, $this->context),
+                        $this->context
+                    );
 
-                $this->dispatcher->dispatch(new GenericEvent($result, $context), 'progress');
+                    $this->dispatcher->dispatch(new GenericEvent($result, $context), 'progress');
+                }
+                catch(\Exception $e){
+                    $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
+                }
             }
-            catch(\Exception $e){
-                $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
-            }
+        }
+        catch(\Exception $e){
+            $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
         }
     }
 

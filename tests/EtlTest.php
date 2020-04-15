@@ -56,29 +56,86 @@ class EtlTest extends TestCase
 
     public function testFoo()
     {
-        $results = $errors = [];
+        $results = [];
 
         $etl = new ETL();
         $etl->setExtractor(function () {
-            return ['ok', 'transformer_nok', 'loader_nok'];
+            return ['foo', 'bar'];
         });
         $etl->setTransformer(function ($data) {
-            if ($data === 'transformer_nok') throw new \RuntimeException('transformation error');
             return (object) ['term' => $data];
         });
         $etl->setLoader(function ($data) {
-            if ($data->term === 'loader_nok') throw new \LogicException('loading error');
+            $data->loaded = true;
             return $data;
         });
         $etl->addProgressListener(function($event) use (&$results) {
             $results[] = $event->getSubject();
+        });
+        $etl->process();
+
+        $this->assertCount(2, $results);
+        $this->assertObjectHasAttribute('term', $results[0]);
+        $this->assertObjectHasAttribute('loaded', $results[0]);
+    }
+
+    public function testExtractorException()
+    {
+        $errors = [];
+
+        $etl = new ETL();
+        $etl->setExtractor(function () {
+            throw new \RuntimeException('extractor error');
         });
         $etl->addErrorListener(function($event) use (&$errors) {
             $errors[] = $event->getSubject();
         });
         $etl->process();
 
-        $this->assertCount(1, $results);
-        $this->assertCount(2, $errors);
+        $this->assertCount(1, $errors);
+        $this->assertEquals('extractor error', $errors[0]->getMessage());
+    }
+
+    public function testTransformerError()
+    {
+        $errors = [];
+
+        $etl = new ETL();
+        $etl->setExtractor(function () {
+            return ['foo'];
+        });
+        $etl->setTransformer(function () {
+            throw new \RuntimeException('transformer error');
+        });
+        $etl->addErrorListener(function($event) use (&$errors) {
+            $errors[] = $event->getSubject();
+        });
+        $etl->process();
+
+        $this->assertCount(1, $errors);
+        $this->assertEquals('transformer error', $errors[0]->getMessage());
+    }
+
+    public function testLoaderError()
+    {
+        $errors = [];
+
+        $etl = new ETL();
+        $etl->setExtractor(function () {
+            return ['foo'];
+        });
+        $etl->setTransformer(function () {
+            return ['foo'];
+        });
+        $etl->setLoader(function () {
+            throw new \RuntimeException('loader error');
+        });
+        $etl->addErrorListener(function($event) use (&$errors) {
+            $errors[] = $event->getSubject();
+        });
+        $etl->process();
+
+        $this->assertCount(1, $errors);
+        $this->assertEquals('loader error', $errors[0]->getMessage());
     }
 }
