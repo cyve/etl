@@ -1,4 +1,4 @@
-# RuleEngineBundle
+# Extract Transform Load
 
 ## Installation:
 
@@ -7,82 +7,41 @@ With [Composer](http://packagist.org):
 composer require cyve/etl
 ```
 
-## Usage (CSV import)
+## Usage
 
+### Use case: convert CSV to JSON
 ```php
-// src/Import/Extractor.php
-class Extractor
-{
-    public function __invoke(array $context)
-    {
-        if($handle = fopen($context['filepath'], 'r')){
-            $keys = fgetcsv($handle);
-            while ($values = fgetcsv($handle)){
-                yield array_combine($keys, $values);
-            }
-            fclose($handle);
-        }
+$etl = new ETL(
+    new CsvFileExtractor('users.csv'),
+    new NullTransformer(),
+    new JsonFileLoader('users.json')
+);
+$etl->start();
+```
+
+### Use a logger
+Use the method `setLogger()` to inject an instance of `Psr\Log\LoggerInterface`.
+At each step of each iteration, the ETL will call `LoggerInterface::info()` if the operation succeeded, or `LoggerInterface::error()` if the operation failed
+```php
+$logger = new Monolog\Logger();
+
+$etl = new ETL(
+    $extractor,
+    $transformer,
+    $loader,
+);
+$etl->setLogger($logger);
+$etl->start();
+```
+
+#### Example: progress bar
+```
+$logger = new class () implements LoggerInterface {
+    public function error(string $message, array $context = []): void {
+        echo 'E';
     }
-}
-```
-
-```php
-// src/Import/Transformer.php
-class Transformer
-{
-    public function __invoke($data, array $context)
-    {
-        $entity = new Entity();
-        $entity->setName($data['name']);
-        return $entity;
+    public function info(string $message, array $context = []): void {
+        echo '#';
     }
-}
-```
-
-```php
-// src/Import/Loader.php
-class Loader
-{
-    public function __invoke($data, array $context)
-    {
-        // save $entity in the database
-    }
-}
-```
-
-```php
-// src/Import/EventListener.php
-class EventListener
-{
-    public function __invoke($event)
-    {
-        // handle event
-    }
-}
-```
-
-```php
-$etl = new Cyve\ETL\ETL(new Extractor(), new Transformer(), new Loader());
-$etl->addErrorListener(new EventListener());
-$etl->addProgressListener(new EventListener());
-$etl->process(['filepath' => '/path/to/csv']);
-```
-
-#### Usage with closures
-
-```php
-$etl = new Cyve\ETL\ETL();
-$etl->setExtractor(function ($context) {
-    // extract
-});
-$etl->setTransformer(function ($data, $context) {
-   // transform
-});
-$etl->setLoader(function ($data, $context) {
-  // load
-});
-$etl->addErrorListener(function ($event) {
-   // handle error event
-});
-$etl->process();
+};
 ```

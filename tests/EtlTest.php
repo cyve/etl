@@ -3,139 +3,97 @@
 namespace Cyve\ETL\Test;
 
 use Cyve\ETL\ETL;
+use Cyve\ETL\Extract\CsvFileExtractor;
+use Cyve\ETL\Extract\ExtractorInterface;
+use Cyve\ETL\Extract\JsonFileExtractor;
+use Cyve\ETL\Extract\PdoExtractor;
+use Cyve\ETL\Load\CsvFileLoader;
+use Cyve\ETL\Load\JsonFileLoader;
+use Cyve\ETL\Load\LoaderInterface;
+use Cyve\ETL\Load\PdoLoader;
+use Cyve\ETL\Transform\NullTransformer;
+use Cyve\ETL\Transform\TransformerInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 class EtlTest extends TestCase
 {
-    public function testCreateFromCallables()
+    public function testConvertCsvToJson()
     {
-        $etl = new ETL(function(){}, function(){}, function(){});
+        $etl = new ETL(
+            new CsvFileExtractor('fixtures/users.csv'),
+            new NullTransformer(),
+            new JsonFileLoader($filename = sys_get_temp_dir().'/'.uniqid()),
+        );
+        $etl->start();
 
-        $extractorPropery = new \ReflectionProperty(ETL::class, 'extractor');
-        $extractorPropery->setAccessible(true);
-        $this->assertIsCallable($extractorPropery->getValue($etl));
-
-        $transformerPropery = new \ReflectionProperty(ETL::class, 'transformer');
-        $transformerPropery->setAccessible(true);
-        $this->assertIsCallable($transformerPropery->getValue($etl));
-
-        $loaderPropery = new \ReflectionProperty(ETL::class, 'loader');
-        $loaderPropery->setAccessible(true);
-        $this->assertIsCallable($loaderPropery->getValue($etl));
+        $this->assertJsonFileEqualsJsonFile('fixtures/users.json', $filename);
     }
 
-    public function testCreateFromInvokables()
+    public function testConvertJsonToPdo()
     {
-        $extractor = new class {
-            public function __invoke() {}
-        };
-        $transformer = new class {
-            public function __invoke() {}
-        };
-        $loader = new class {
-            public function __invoke() {}
-        };
+        $pdo = new \PDO($dsn = sprintf('sqlite:%s/%s.db', sys_get_temp_dir(), uniqid()));
+        $pdo->exec('CREATE TABLE users (name VARCHAR(255), email VARCHAR(255))');
 
-        $etl = new ETL();
-        $etl->setExtractor($extractor);
-        $etl->setTransformer($transformer);
-        $etl->setLoader($loader);
+        $etl = new ETL(
+            new JsonFileExtractor('fixtures/users.json'),
+            new NullTransformer(),
+            new PdoLoader($dsn, 'users'),
+        );
+        $etl->start();
 
-        $extractorPropery = new \ReflectionProperty(ETL::class, 'extractor');
-        $extractorPropery->setAccessible(true);
-        $this->assertIsCallable($extractorPropery->getValue($etl));
-
-        $transformerPropery = new \ReflectionProperty(ETL::class, 'transformer');
-        $transformerPropery->setAccessible(true);
-        $this->assertIsCallable($transformerPropery->getValue($etl));
-
-        $loaderPropery = new \ReflectionProperty(ETL::class, 'loader');
-        $loaderPropery->setAccessible(true);
-        $this->assertIsCallable($loaderPropery->getValue($etl));
+        $users = $pdo->query('SELECT * FROM users')->fetchAll(\PDO::FETCH_ASSOC);
+        $this->assertCount(2, $users);
+        $this->assertContains(['name' => 'John Doe', 'email' => 'john.doe@mail.com'], $users);
+        $this->assertContains(['name' => 'Jane Doe', 'email' => 'jane.doe@mail.com'], $users);
     }
 
-    public function testFoo()
+    public function testConvertPdoToCsv()
     {
-        $results = [];
+        $etl = new ETL(
+            new PdoExtractor('sqlite:fixtures/test.db', 'users'),
+            new NullTransformer(),
+            new CsvFileLoader($filename = sys_get_temp_dir().'/'.uniqid()),
+        );
+        $etl->start();
 
-        $etl = new ETL();
-        $etl->setExtractor(function () {
-            return ['foo', 'bar'];
-        });
-        $etl->setTransformer(function ($data) {
-            return (object) ['term' => $data];
-        });
-        $etl->setLoader(function ($data) {
-            $data->loaded = true;
-            return $data;
-        });
-        $etl->addProgressListener(function($event) use (&$results) {
-            $results[] = $event->getSubject();
-        });
-        $etl->process();
-
-        $this->assertCount(2, $results);
-        $this->assertObjectHasAttribute('term', $results[0]);
-        $this->assertObjectHasAttribute('loaded', $results[0]);
+        $this->assertFileEquals('fixtures/users.csv', $filename);
     }
 
-    public function testExtractorException()
+    public function testLogger()
     {
-        $errors = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(6))->method('info');
+        $logger->expects($this->exactly(3))->method('error');
 
-        $etl = new ETL();
-        $etl->setExtractor(function () {
-            throw new \RuntimeException('extractor error');
-        });
-        $etl->addErrorListener(function($event) use (&$errors) {
-            $errors[] = $event->getSubject();
-        });
-        $etl->process();
-
-        $this->assertCount(1, $errors);
-        $this->assertEquals('extractor error', $errors[0]->getMessage());
-    }
-
-    public function testTransformerError()
-    {
-        $errors = [];
-
-        $etl = new ETL();
-        $etl->setExtractor(function () {
-            return ['foo'];
-        });
-        $etl->setTransformer(function () {
-            throw new \RuntimeException('transformer error');
-        });
-        $etl->addErrorListener(function($event) use (&$errors) {
-            $errors[] = $event->getSubject();
-        });
-        $etl->process();
-
-        $this->assertCount(1, $errors);
-        $this->assertEquals('transformer error', $errors[0]->getMessage());
-    }
-
-    public function testLoaderError()
-    {
-        $errors = [];
-
-        $etl = new ETL();
-        $etl->setExtractor(function () {
-            return ['foo'];
-        });
-        $etl->setTransformer(function () {
-            return ['foo'];
-        });
-        $etl->setLoader(function () {
-            throw new \RuntimeException('loader error');
-        });
-        $etl->addErrorListener(function($event) use (&$errors) {
-            $errors[] = $event->getSubject();
-        });
-        $etl->process();
-
-        $this->assertCount(1, $errors);
-        $this->assertEquals('loader error', $errors[0]->getMessage());
+        $etl = new ETL(
+            new class () implements ExtractorInterface {
+                public function extract(): \Iterator
+                {
+                    yield 1;
+                    yield 2;
+                    yield 3;
+                    yield new \RuntimeException('Extraction error');
+                }
+            },
+            new class () implements TransformerInterface {
+                public function transform($iterator): \Iterator
+                {
+                    foreach ($iterator as $iteration) {
+                        yield $iteration < 3 ? $iteration : new \RuntimeException('Transformation error');
+                    }
+                }
+            },
+            new class () implements LoaderInterface {
+                public function load($iterator): \Iterator
+                {
+                    foreach ($iterator as $iteration) {
+                        yield $iteration < 2 ? $iteration : new \RuntimeException('Loading error');
+                    }
+                }
+            }
+        );
+        $etl->setLogger($logger);
+        $etl->start();
     }
 }

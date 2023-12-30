@@ -2,183 +2,58 @@
 
 namespace Cyve\ETL;
 
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\EventDispatcher\GenericEvent;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Cyve\ETL\Extract\ExtractorInterface;
+use Cyve\ETL\Load\LoaderInterface;
+use Cyve\ETL\Transform\TransformerInterface;
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerAwareTrait;
 
-class ETL
+class ETL implements LoggerAwareInterface
 {
-    /**
-     * @var callable
-     */
-    protected $extractor;
+    use LoggerAwareTrait;
 
-    /**
-     * @var callable
-     */
-    protected $transformer;
-
-    /**
-     * @var callable
-     */
-    protected $loader;
-
-    /**
-     * @var array
-     */
-    protected $context = [];
-
-    /**
-     * @var EventDispatcherInterface
-     */
-    protected $dispatcher;
-
-    /**
-     * @param callable|null $extractor
-     * @param callable|null $transformer
-     * @param callable|null $loader
-     */
-    public function __construct(callable $extractor = null, callable $transformer = null, callable $loader = null)
-    {
-        $this->extractor = $extractor;
-        $this->transformer = $transformer;
-        $this->loader = $loader;
-        $this->dispatcher = new EventDispatcher();
+    public function __construct(
+        private ExtractorInterface $extractor,
+        private TransformerInterface $transformer,
+        private LoaderInterface $loader,
+    ) {
     }
 
-    /**
-     * @param callable $extractor
-     * @return $this
-     */
-    public function setExtractor(callable $extractor): self
+    public function start(): void
     {
-        $this->extractor = $extractor;
-
-        return $this;
-    }
-
-    /**
-     * @param callable $transformer
-     * @return $this
-     */
-    public function setTransformer(callable $transformer): self
-    {
-        $this->transformer = $transformer;
-
-        return $this;
-    }
-
-    /**
-     * @param callable $loader
-     * @return $this
-     */
-    public function setLoader(callable $loader): self
-    {
-        $this->loader = $loader;
-
-        return $this;
-    }
-
-    /**
-     * @param EventDispatcherInterface $dispatcher
-     * @return $this
-     */
-    public function setDispatcher(EventDispatcherInterface $dispatcher): self
-    {
-        $this->dispatcher = $dispatcher;
-
-        return $this;
-    }
-
-    /**
-     * @param callable $callback
-     */
-    public function addProgressListener(callable $callback): void
-    {
-        $this->dispatcher->addListener('progress', $callback);
-    }
-
-    /**
-     * @param callable $callback
-     */
-    public function addErrorListener(callable $callback): void
-    {
-        $this->dispatcher->addListener('error', $callback);
-    }
-
-    /**
-     * @return array
-     */
-    public function getContext(): array
-    {
-        return $this->context;
-    }
-
-    /**
-     * @param array $context
-     */
-    public function process(array $context = []): void
-    {
-        $this->context = $context;
-
-        try {
-            foreach($this->extract($this->context) as $data) {
-                try {
-                    $result = $this->load(
-                        $this->transform($data, $this->context),
-                        $this->context
-                    );
-
-                    $this->dispatcher->dispatch(new GenericEvent($result, $context), 'progress');
+        $extracted = (function () {
+            foreach ($this->extractor->extract() as $index => $result) {
+                if ($result instanceof \Throwable) {
+                    $this->logger?->error($result->getMessage(), ['handler' => $this->extractor::class, 'index' => $index, 'exception' => $result]);
+                    continue;
                 }
-                catch(\Exception $e){
-                    $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
-                }
+
+                $this->logger?->info('Extraction success', ['handler' => $this->extractor::class, 'index' => $index, 'result' => $result]);
+
+                yield $result;
             }
+        });
+
+        $transformed = (function () use ($extracted) {
+            foreach ($this->transformer->transform($extracted()) as $index => $result) {
+                if ($result instanceof \Throwable) {
+                    $this->logger?->error($result->getMessage(), ['handler' => $this->transformer::class, 'index' => $index, 'exception' => $result]);
+                    continue;
+                }
+
+                $this->logger?->info('Transformation success', ['handler' => $this->transformer::class, 'index' => $index, 'result' => $result]);
+
+                yield $result;
+            }
+        });
+
+        foreach ($this->loader->load($transformed()) as $index => $result) {
+            if ($result instanceof \Throwable) {
+                $this->logger?->error($result->getMessage(), ['handler' => $this->loader::class, 'index' => $index, 'exception' => $result]);
+                continue;
+            }
+
+            $this->logger?->info('Loading success', ['handler' => $this->loader::class, 'index' => $index, 'result' => $result]);
         }
-        catch(\Exception $e){
-            $this->dispatcher->dispatch(new GenericEvent($e, $context), 'error');
-        }
-    }
-
-    /**
-     * @param array $context
-     * @return iterable
-     */
-    private function extract(array $context = []): iterable
-    {
-        if (is_callable($this->extractor)) {
-            return call_user_func($this->extractor, $context);
-        }
-
-        return [];
-    }
-
-    /**
-     * @param mixed $data
-     * @param array $context
-     * @return mixed
-     */
-    private function transform($data, array $context = [])
-    {
-        if (is_callable($this->transformer)) {
-            return call_user_func($this->transformer, $data, $context);
-        }
-
-        return $data;
-    }
-
-    /**
-     * @param mixed $data
-     * @param array $context
-     * @return mixed
-     */
-    private function load($data, array $context = [])
-    {
-        if (is_callable($this->loader)) {
-            return call_user_func($this->loader, $data, $context);
-        }
-
-        return $data;
     }
 }
