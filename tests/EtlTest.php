@@ -4,17 +4,23 @@ namespace Cyve\ETL\Test;
 
 use Cyve\ETL\ETL;
 use Cyve\ETL\Extract\CsvFileExtractor;
+use Cyve\ETL\Extract\Event\ExtractFailureEvent;
+use Cyve\ETL\Extract\Event\ExtractSuccessEvent;
 use Cyve\ETL\Extract\ExtractorInterface;
 use Cyve\ETL\Extract\JsonFileExtractor;
 use Cyve\ETL\Extract\PdoExtractor;
 use Cyve\ETL\Load\CsvFileLoader;
+use Cyve\ETL\Load\Event\LoadFailureEvent;
+use Cyve\ETL\Load\Event\LoadSuccessEvent;
 use Cyve\ETL\Load\JsonFileLoader;
 use Cyve\ETL\Load\LoaderInterface;
 use Cyve\ETL\Load\PdoLoader;
+use Cyve\ETL\Transform\Event\TransformFailureEvent;
+use Cyve\ETL\Transform\Event\TransformSuccessEvent;
 use Cyve\ETL\Transform\NullTransformer;
 use Cyve\ETL\Transform\TransformerInterface;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 class EtlTest extends TestCase
 {
@@ -60,12 +66,8 @@ class EtlTest extends TestCase
         $this->assertFileEquals('fixtures/users.csv', $filename);
     }
 
-    public function testLogger()
+    public function testEventDispatcher()
     {
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->exactly(6))->method('info');
-        $logger->expects($this->exactly(3))->method('error');
-
         $etl = new ETL(
             new class () implements ExtractorInterface {
                 public function extract(): \Iterator
@@ -91,9 +93,23 @@ class EtlTest extends TestCase
                         yield $iteration < 2 ? $iteration : new \RuntimeException('Loading error');
                     }
                 }
-            }
+            },
+            $eventDispatcher = new class () implements EventDispatcherInterface {
+                public array $eventCount = [];
+                public function dispatch(object $event): void
+                {
+                    $this->eventCount[$event::class] ??= 0;
+                    $this->eventCount[$event::class]++;
+                }
+            },
         );
-        $etl->setLogger($logger);
         $etl->start();
+
+        $this->assertEquals(3, $eventDispatcher->eventCount[ExtractSuccessEvent::class]);
+        $this->assertEquals(1, $eventDispatcher->eventCount[ExtractFailureEvent::class]);
+        $this->assertEquals(2, $eventDispatcher->eventCount[TransformSuccessEvent::class]);
+        $this->assertEquals(1, $eventDispatcher->eventCount[TransformFailureEvent::class]);
+        $this->assertEquals(1, $eventDispatcher->eventCount[LoadSuccessEvent::class]);
+        $this->assertEquals(1, $eventDispatcher->eventCount[LoadFailureEvent::class]);
     }
 }

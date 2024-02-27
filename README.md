@@ -19,29 +19,28 @@ $etl = new ETL(
 $etl->start();
 ```
 
-### Use a logger
-Use the method `setLogger()` to inject an instance of `Psr\Log\LoggerInterface`.
-At each step of each iteration, the ETL will call `LoggerInterface::info()` if the operation succeeded, or `LoggerInterface::error()` if the operation failed
+### Use an event dispatcher
+Use the 4th argument of the constructor to inject an instance of `Psr\EventDispatcher\EventDispatcherInterface`.
+At each step of each iteration, the ETL will dispatch an event containing the result if the operation succeeded, or an exception if the operation failed
 ```php
-$logger = new Monolog\Logger();
+$eventDispatcher = new Symfony\Component\EventDispatcher\EventDispatcher();
 
 $etl = new ETL(
     $extractor,
     $transformer,
     $loader,
+    $eventDispatcher,
 );
-$etl->setLogger($logger);
 $etl->start();
 ```
 
 #### Example: progress bar
 ```
-$logger = new class () implements LoggerInterface {
-    public function error(string $message, array $context = []): void {
-        echo 'E';
-    }
-    public function info(string $message, array $context = []): void {
-        echo '#';
-    }
-};
+$eventDispatcher = new Symfony\Component\EventDispatcher\EventDispatcher();
+$eventDispatcher->addListener(LoadSuccessEvent::class, function (LoadSuccessEvent $event): void {
+    echo '#';
+});
+$eventDispatcher->addListener(LoadFailureEvent::class, function (LoadFailureEvent $event): void {
+    echo 'E';
+});
 ```

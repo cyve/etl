@@ -2,20 +2,24 @@
 
 namespace Cyve\ETL;
 
+use Cyve\ETL\Extract\Event\ExtractFailureEvent;
+use Cyve\ETL\Extract\Event\ExtractSuccessEvent;
 use Cyve\ETL\Extract\ExtractorInterface;
+use Cyve\ETL\Load\Event\LoadFailureEvent;
+use Cyve\ETL\Load\Event\LoadSuccessEvent;
 use Cyve\ETL\Load\LoaderInterface;
+use Cyve\ETL\Transform\Event\TransformFailureEvent;
+use Cyve\ETL\Transform\Event\TransformSuccessEvent;
 use Cyve\ETL\Transform\TransformerInterface;
-use Psr\Log\LoggerAwareInterface;
-use Psr\Log\LoggerAwareTrait;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
-class ETL implements LoggerAwareInterface
+class ETL
 {
-    use LoggerAwareTrait;
-
     public function __construct(
         private ExtractorInterface $extractor,
         private TransformerInterface $transformer,
         private LoaderInterface $loader,
+        private ?EventDispatcherInterface $eventDispatcher = null,
     ) {
     }
 
@@ -24,11 +28,11 @@ class ETL implements LoggerAwareInterface
         $extracted = (function () {
             foreach ($this->extractor->extract() as $index => $result) {
                 if ($result instanceof \Throwable) {
-                    $this->logger?->error($result->getMessage(), ['handler' => $this->extractor::class, 'index' => $index, 'exception' => $result]);
+                    $this->eventDispatcher?->dispatch(new ExtractFailureEvent($index, $result));
                     continue;
                 }
 
-                $this->logger?->info('Extraction success', ['handler' => $this->extractor::class, 'index' => $index, 'result' => $result]);
+                $this->eventDispatcher?->dispatch(new ExtractSuccessEvent($index, $result));
 
                 yield $result;
             }
@@ -37,11 +41,11 @@ class ETL implements LoggerAwareInterface
         $transformed = (function () use ($extracted) {
             foreach ($this->transformer->transform($extracted()) as $index => $result) {
                 if ($result instanceof \Throwable) {
-                    $this->logger?->error($result->getMessage(), ['handler' => $this->transformer::class, 'index' => $index, 'exception' => $result]);
+                    $this->eventDispatcher?->dispatch(new TransformFailureEvent($index, $result));
                     continue;
                 }
 
-                $this->logger?->info('Transformation success', ['handler' => $this->transformer::class, 'index' => $index, 'result' => $result]);
+                $this->eventDispatcher?->dispatch(new TransformSuccessEvent($index, $result));
 
                 yield $result;
             }
@@ -49,11 +53,11 @@ class ETL implements LoggerAwareInterface
 
         foreach ($this->loader->load($transformed()) as $index => $result) {
             if ($result instanceof \Throwable) {
-                $this->logger?->error($result->getMessage(), ['handler' => $this->loader::class, 'index' => $index, 'exception' => $result]);
+                $this->eventDispatcher?->dispatch(new LoadFailureEvent($index, $result));
                 continue;
             }
 
-            $this->logger?->info('Loading success', ['handler' => $this->loader::class, 'index' => $index, 'result' => $result]);
+            $this->eventDispatcher?->dispatch(new LoadSuccessEvent($index, $result));
         }
     }
 }
