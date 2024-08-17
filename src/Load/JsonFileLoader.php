@@ -18,6 +18,6 @@ class JsonFileLoader implements LoaderInterface
             yield $object;
         }
 
-        file_put_contents($this->filename, json_encode($content, JSON_PRETTY_PRINT));
+        file_put_contents($this->filename, json_encode($content, JSON_PRETTY_PRINT)) ?: throw new \RuntimeException(sprintf('Impossible to write file "%s".', $this->filename));
     }
 }

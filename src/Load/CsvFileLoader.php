@@ -4,6 +4,9 @@ namespace Cyve\ETL\Load;
 
 class CsvFileLoader implements LoaderInterface
 {
+    /**
+     * @param array<string, mixed> $options
+     */
     public function __construct(
         private string $filename,
         private array $options = [],
@@ -15,7 +18,7 @@ class CsvFileLoader implements LoaderInterface
 
     public function load(\Iterator $iterator): \Iterator
     {
-        $stream = fopen($this->filename, 'a');
+        $stream = fopen($this->filename, 'a') ?: throw new \RuntimeException(sprintf('Impossible to open file "%s".', $this->filename));
 
         $fileStats = fstat($stream) ?: [];
         $fileSize = $fileStats['size'] ?? 0;

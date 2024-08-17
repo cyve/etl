@@ -6,7 +6,7 @@ class ExtractFailureEvent
 {
     public function __construct(
         public int $index,
-        public \Exception $exception,
+        public \Throwable $exception,
     ){
     }
 }

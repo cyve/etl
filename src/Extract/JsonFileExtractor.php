@@ -14,7 +14,7 @@ class JsonFileExtractor implements ExtractorInterface
 
     public function extract(): \Iterator
     {
-        $content = file_get_contents($this->filename);
+        $content = file_get_contents($this->filename) ?: throw new \RuntimeException(sprintf('Impossible to open file "%s".', $this->filename));
         $content = json_decode($content, null, 512, \JSON_THROW_ON_ERROR);
 
         if (is_array($content) && array_is_list($content)) {
