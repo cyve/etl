@@ -1,6 +1,6 @@
 <?php
 
-namespace Cyve\ETL\Test\Transform;
+namespace Cyve\ETL\Tests\Transform;
 
 use Cyve\ETL\Transform\NullTransformer;
 use PHPUnit\Framework\TestCase;

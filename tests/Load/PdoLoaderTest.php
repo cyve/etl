@@ -1,6 +1,6 @@
 <?php
 
-namespace Cyve\ETL\Test\Load;
+namespace Cyve\ETL\Tests\Load;
 
 use Cyve\ETL\Load\PdoLoader;
 use PHPUnit\Framework\TestCase;

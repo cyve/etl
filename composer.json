@@ -24,7 +24,7 @@
     },
     "autoload-dev" : {
         "psr-4": {
-            "Cyve\\ETL\\Test\\" : "tests/"
+            "Cyve\\ETL\\Tests\\" : "tests/"
         }
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Cyve\ETL\Test\Extract;
+namespace Cyve\ETL\Tests\Extract;
 
 use Cyve\ETL\Extract\CsvFileExtractor;
 use PHPUnit\Framework\TestCase;
